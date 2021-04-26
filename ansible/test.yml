@@ -1,0 +1,88 @@
+---
+# 1) Testing infrastructure
+- hosts: all
+  become: yes
+  vars:
+    ansible_ssh_private_key_file: ./alation-keypair.pem
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+  tasks:
+    - name: TEST1-Pinging hosts
+      ping:
+
+
+# 2) Testing services
+- hosts: load_balancer
+  become: yes
+  tasks:
+    - name: TEST2-Curling web services
+      uri:
+        url: "http://{{ item }}:80"
+        status_code: 200
+        return_content: yes
+      loop: "{{ groups['web']|map('extract', hostvars, 'public_ip')|list }}"
+
+- hosts: load_balancer
+  become: yes
+  tasks:
+    - name: TEST2-Curling haproxy
+      uri:
+        url: "http://localhost:80"
+        status_code: 200
+        return_content: yes
+      with_sequence: count=5
+
+# 3) Bring down 1 web server, test load balancer
+
+- hosts: "{{ groups['web'][0] }}"
+  become: yes
+  vars:
+    ansible_ssh_private_key_file: ./alation-keypair.pem
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+  tasks:
+    - name: TEST3-Stopping nginx on first web instance to test load balancer
+      service:
+        name: nginx
+        state: stopped
+
+- hosts: load_balancer
+  tasks:
+    - name: TEST3-Pause for 5 seconds
+      pause:
+        seconds: 5
+
+- hosts: load_balancer
+  become: yes
+  tasks:
+    - name: TEST3-Curling load balancer n times
+      uri:
+        url: "http://localhost:80"
+        status_code: 200
+        return_content: yes
+      with_sequence: count=5
+
+- hosts: "{{ groups['web'][0] }}"
+  become: yes
+  vars:
+    ansible_ssh_private_key_file: ./alation-keypair.pem
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+  tasks:
+    - name: TEST3-Starting nginx on first web instance
+      service:
+        name: nginx
+        state: started
+
+- hosts: load_balancer
+  tasks:
+    - name: TEST3-Pause for 5 seconds
+      pause:
+        seconds: 5
+
+- hosts: load_balancer
+  become: yes
+  tasks:
+    - name: TEST3-Curling load balancer n times
+      uri:
+        url: "http://localhost:80"
+        status_code: 200
+        return_content: yes
+      with_sequence: count=5
